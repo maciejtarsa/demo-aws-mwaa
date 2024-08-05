@@ -5,6 +5,12 @@ Parameters:
   VPCId:
     Type: String
     Description: The ID of the VPC
+  PrivateSubnet1:
+    Type: String
+    Description: The ID of the private subnet 1
+  PrivateSubnet2:
+    Type: String
+    Description: The ID of the private subnet 2
   BucketArn:
     Type: String
     Description: The ARN of the S3 bucket
@@ -12,6 +18,27 @@ Parameters:
     Type: String
     Description: The name of the environment
     Default: sample-mwaa
+  Creator:
+    Type: String
+    Description: The creator of the environment
+  EnvironmentClass:
+    Type: String
+    Description: The class of the environment which determines the size of workers, schedulers, etc.
+    AllowedValues:
+      - mw1.small
+      - mw1.medium
+      - mw1.large
+      - mw1.xlarge
+      - mw1.2xlarge
+    ConstraintDescription: Must be one of mw1.small, mw1.medium, mw1.large, mw1.2xlarge
+    Default: mw1.small
+  MaxWorkerCount:
+    Type: Number
+    Description: The max count of workers in env
+    Default: 1
+    MinValue: 1
+    MaxValue: 25
+    ConstraintDescription: Value must be an integer between 1 and 25
   
 Resources:
   # Security group
@@ -129,3 +156,62 @@ Resources:
               StringLike:
                 "kms:ViaService":
                   - !Sub "sqs.${AWS::Region}.amazonaws.com"
+
+  AirflowEnvironment:
+    Type: AWS::MWAA::Environment
+    Properties:
+      AirflowConfigurationOptions: 
+        core.default_timezone: utc
+        logging.logging_level: INFO
+      AirflowVersion: 2.9.2
+      DagS3Path: dags
+      EndpointManagement: CUSTOMER
+      EnvironmentClass: !Ref EnvironmentClass
+      ExecutionRoleArn: !Ref IAMExecutonRole
+      LoggingConfiguration: 
+        DagProcessingLogs: 
+          Enabled: true
+          LogLevel: INFO
+        SchedulerLogs: 
+          Enabled: true
+          LogLevel: INFO
+        TaskLogs: 
+          Enabled: true
+          LogLevel: INFO
+        WebserverLogs: 
+          Enabled: true
+          LogLevel: INFO
+        WorkerLogs: 
+          Enabled: true
+          LogLevel: INFO
+      MaxWorkers: !Ref MaxWorkerCount
+      MinWorkers: 1
+      Name: !Ref EnvName
+      NetworkConfiguration: 
+        SecurityGroupIds: 
+          - !Ref SecurityGroup
+        SubnetIds: 
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      # PluginsS3Path: plugins/plugins.zip
+      RequirementsS3Path: requirements/requirements.txt
+      Schedulers: 2
+      SourceBucketArn: !Ref BucketArn
+      StartupScriptS3Path: startup/startup-script.sh
+      Tags: 
+        Project: Personal
+        Environment: Dev
+        Creator: !Ref Creator
+        Owner: !Ref Creator
+        Version: 0.1.0
+        Name: !Ref EnvName
+      WebserverAccessMode: PRIVATE_ONLY
+      WeeklyMaintenanceWindowStart: SUN:16:00 # this is in UTC - equivalent to midnight Perth time
+
+Outputs:
+  AirflowExecutionRoleArn:
+    Description: The Arn of the Airflow Execution Role
+    Value: !GetAtt IAMExecutonRole.Arn
+  AirflowEnvironmentArn:
+    Description: The name of the MWAA environment
+    Value: !GetAtt AirflowEnvironment.Arn

@@ -51,11 +51,16 @@ We will extract some variables from the previous stack and then pass them as var
 ```
 vpc_id=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='VPC'].OutputValue" --output text)
 bucket_arn=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketARN'].OutputValue" --output text)
+private_subnet_1=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='PrivateSubnet1'].OutputValue" --output text)
+private_subnet_2=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='PrivateSubnet2'].OutputValue" --output text)
 
 aws cloudformation update-stack --stack-name mwaa-resources \
 --template-body file://cf/mwaa-resources.yml --profile $AWS_PROFILE \
 --parameters ParameterKey=VPCId,ParameterValue=$vpc_id\
- ParameterKey=BucketArn,ParameterValue=$bucket_arn \
+ ParameterKey=BucketArn,ParameterValue=$bucket_arn\
+ ParameterKey=Creator,ParameterValue=$CREATOR\
+ ParameterKey=PrivateSubnet1,ParameterValue=$private_subnet_1\
+ ParameterKey=PrivateSugnet2,ParameterValue=$private_subnet_2 \
 --tags \
  Key=Project,Value=Personal \
  Key=Environment,Value=Dev \
