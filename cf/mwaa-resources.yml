@@ -14,6 +14,9 @@ Parameters:
   BucketArn:
     Type: String
     Description: The ARN of the S3 bucket
+  BucketName:
+    Type: String
+    Description: The name of the S3 bucket
   EnvName:
     Type: String
     Description: The name of the environment
@@ -167,7 +170,7 @@ Resources:
       DagS3Path: dags
       EndpointManagement: CUSTOMER
       EnvironmentClass: !Ref EnvironmentClass
-      ExecutionRoleArn: !Ref IAMExecutonRole
+      ExecutionRoleArn: !GetAtt IAMExecutonRole.Arn
       LoggingConfiguration: 
         DagProcessingLogs: 
           Enabled: true
@@ -207,6 +210,107 @@ Resources:
         Name: !Ref EnvName
       WebserverAccessMode: PRIVATE_ONLY
       WeeklyMaintenanceWindowStart: SUN:16:00 # this is in UTC - equivalent to midnight Perth time
+
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: 'LambdaPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:TagLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/airflow-additional-resources:*"
+              - Effect: 'Allow'
+                Action:
+                  - logs:TagLogGroup
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:airflow-*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "${BucketArn}/lambda/*"
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcEndpoints
+                  - ec2:DescribeNetworkInterfaces
+                Resource: "*"
+              - Effect: 'Allow'
+                Action:
+                  - ec2:CreateVpcEndpoint
+                  - ec2:CreateTags
+                  - ec2:DeleteTags
+                  - ec2:ModifyVpcEndpoint
+                Resource: "arn:aws:ec2:*:*:vpc-endpoint/*"
+                Condition:
+                  ForAnyValue:StringEquals: {"aws:TagKeys": "MWAACustomerManaged"}
+              - Effect: Allow
+                Action:
+                  - ec2:DeleteVpcEndpoints
+                Resource: "arn:aws:ec2:*:*:vpc-endpoint/*"
+                Condition:
+                  ForAnyValue:StringEquals: {"aws:ResourceTag/MWAACustomerManaged": "true"}
+              - Effect: Allow
+                Action:
+                  - ec2:CreateVpcEndpoint
+                  - ec2:ModifyVpcEndpoint
+                Resource: [
+                  "arn:aws:ec2:*:*:vpc/*",
+                  "arn:aws:ec2:*:*:subnet/*",
+                  "arn:aws:ec2:*:*:security-group/*"
+                ]
+
+  AdditionalResourcesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: airflow-additional-resources
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: lambda/airflow-lambda.zip
+      Runtime: python3.11
+      Timeout: 120
+
+  AdditionalResources:
+    Type: Custom::AdditionalResources
+    Properties:
+      ServiceToken: !GetAtt AdditionalResourcesFunction.Arn
+      ServiceTimeout: 120
+      LogGroupArns:
+        - !GetAtt AirflowEnvironment.LoggingConfiguration.DagProcessingLogs.CloudWatchLogGroupArn
+        - !GetAtt AirflowEnvironment.LoggingConfiguration.SchedulerLogs.CloudWatchLogGroupArn
+        - !GetAtt AirflowEnvironment.LoggingConfiguration.TaskLogs.CloudWatchLogGroupArn
+        - !GetAtt AirflowEnvironment.LoggingConfiguration.WebserverLogs.CloudWatchLogGroupArn
+        - !GetAtt AirflowEnvironment.LoggingConfiguration.WorkerLogs.CloudWatchLogGroupArn
+      VpcId: !Ref VPCId
+      SecurityGroupId: !Ref SecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      VPCDatabaseEndpointService: !GetAtt AirflowEnvironment.DatabaseVpcEndpointService
+      VPCWebserverEndpointService: !GetAtt AirflowEnvironment.WebserverVpcEndpointService
+      Tags:
+        Project: Personal
+        Environment: Dev
+        Creator: !Ref Creator
+        Owner: !Ref Creator
+        Version: 0.1.0
+        Name: !Ref EnvName
 
 Outputs:
   AirflowExecutionRoleArn:

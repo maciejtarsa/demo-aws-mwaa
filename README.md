@@ -37,14 +37,9 @@ Next, we need to upload files required by MWAA to the S3 bucket. These include:
 - folder with our dags - in this case we have a simple dag with a Dummy Operator
 - startup script which will be used to set up MWAA workers
 - requirements.txt file which will contain packages used by our environment
+- lambda function code which will be run after MWAA gets created
 
-We can get the bucket name from the stack, and then run an s3 sync command to sync the contents of the `mwaa` folder into the bucket:
-```
-bucket_name=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text)
-
-aws s3 sync mwaa s3://$bucket_name --profile $AWS_PROFILE
-```
-#### PRIVATE mode only - Building a wheel for requirements
+#### Building a wheel for requirements
 
 > When you create an environment with private web server access, you must package all of your dependencies in a Python wheel archive (.whl), then reference the .whl in your requirements.txt. For instructions on packaging and installing your dependencies using wheel
 [From Apache Airflow access modes](https://docs.aws.amazon.com/mwaa/latest/userguide/configuring-networking.html)
@@ -59,7 +54,22 @@ zip -j plugins/plugins.zip wheels/*
 rm -r wheels
 cd ..
 ```
-Once done, we need to sync the file to S3:
+#### Zipping lambda code
+Equally our Lambda function code will need to be zipped before updating to S3
+```
+cd mwaa/lambda
+mkdir code
+cp * ./code
+cd code
+pip3 install -r ../requirements.txt -t .
+zip -r ../airflow-lambda.zip .
+cd ..
+rm -r code
+cd ../..
+```
+#### Upload files to s3
+Once done, we need to sync the file to S3.
+We can get the bucket name from the stack, and then run an s3 sync command to sync the contents of the `mwaa` folder into the bucket:
 ```
 bucket_name=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text)
 
@@ -72,6 +82,7 @@ We will extract some variables from the previous stack and then pass them as var
 ```
 vpc_id=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='VPC'].OutputValue" --output text)
 bucket_arn=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketARN'].OutputValue" --output text)
+bucket_name=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text)
 private_subnet_1=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='PrivateSubnet1'].OutputValue" --output text)
 private_subnet_2=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='PrivateSubnet2'].OutputValue" --output text)
 
@@ -79,9 +90,10 @@ aws cloudformation update-stack --stack-name mwaa-resources \
 --template-body file://cf/mwaa-resources.yml --profile $AWS_PROFILE \
 --parameters ParameterKey=VPCId,ParameterValue=$vpc_id\
  ParameterKey=BucketArn,ParameterValue=$bucket_arn\
+ ParameterKey=BucketName,ParameterValue=$bucket_name\
  ParameterKey=Creator,ParameterValue=$CREATOR\
  ParameterKey=PrivateSubnet1,ParameterValue=$private_subnet_1\
- ParameterKey=PrivateSugnet2,ParameterValue=$private_subnet_2 \
+ ParameterKey=PrivateSubnet2,ParameterValue=$private_subnet_2 \
 --tags \
  Key=Project,Value=Personal \
  Key=Environment,Value=Dev \
