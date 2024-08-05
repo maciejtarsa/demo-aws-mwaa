@@ -1,7 +1,15 @@
 # Deploying MWAA with Cloud Formation
-A sample cloud formation project that deploys MWAA
+A sample Cloud Formation project that deploys MWAA into a given AWS account.
 
-## To use this repository
+## Set up and requirements
+You will require an AWS account. Cloud formation gets deployed via AWS CLI. An AWS login session is required. An AWS profile can be configured by running:
+```
+aws configure
+```
+Fill the details as required. Once a profile is configured, a session can be created by running:
+```
+aws sso login --profile <YOUR-PROFILE>
+```
 
 ## Licence
 Copyright 2024 Mechanical Rock
