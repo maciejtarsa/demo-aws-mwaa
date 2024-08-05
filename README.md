@@ -44,6 +44,27 @@ bucket_name=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisite
 
 aws s3 sync mwaa s3://$bucket_name --profile $AWS_PROFILE
 ```
+#### PRIVATE mode only - Building a wheel for requirements
+
+> When you create an environment with private web server access, you must package all of your dependencies in a Python wheel archive (.whl), then reference the .whl in your requirements.txt. For instructions on packaging and installing your dependencies using wheel
+[From Apache Airflow access modes](https://docs.aws.amazon.com/mwaa/latest/userguide/configuring-networking.html)
+You can build a wheel of all requirements and package them into a zip with:
+```bash
+cd mwaa
+mkdir -p wheels
+pip3.11 download -r requirements/requirements-wheels.txt -d wheels/
+pip3.11 download -r startup/requirements-startup-wheels.txt -d wheels/
+mkdir -p plugins
+zip -j plugins/plugins.zip wheels/*
+rm -r wheels
+cd ..
+```
+Once done, we need to sync the file to S3:
+```
+bucket_name=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text)
+
+aws s3 sync mwaa s3://$bucket_name --profile $AWS_PROFILE
+```
 ### MWAA deployment
 Once the pre-requisites are in places, we can deploy MWAA and its resources.
 
