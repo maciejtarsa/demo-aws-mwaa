@@ -19,7 +19,8 @@ export CREATOR=<YOUR-NAME>
 ## Cloud formation deployment
 The cloud formation template is split into pre-requisites and MWAA resources. Pre-requisites include resources that are needed before MWAA can be dployed (VPC resources, S3 bucket). Once these are deployed, some files are required to be present in the S3 bucket (we run `s3 sync` for those). Then, the MWAA resources get deployed.
 
-To create the pre-requisites:
+### Pre-requisites deployment
+MWAA requires some resources to exist in your account already - VPC resources with private and public subnets and an S3 bucket
 ```
 aws cloudformation create-stack --stack-name mwaa-pre-requisites \
 --template-body file://cf/pre-requisites.yml --profile $AWS_PROFILE \
@@ -31,9 +32,22 @@ aws cloudformation create-stack --stack-name mwaa-pre-requisites \
  Key=Owner,Value=$CREATOR \
  Key=Version,Value=0.1.0
 ```
+### Sync to S3 bucket
+Next, we need to upload files required by MWAA to the S3 bucket. These include:
+- folder with our dags - in this case we have a simple dag with a Dummy Operator
+- startup script which will be used to set up MWAA workers
+- requirements.txt file which will contain packages used by our environment
+
+We can get the bucket name from the stack, and then run an s3 sync command to sync the contents of the `mwaa` folder into the bucket:
+```
+bucket_name=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text)
+aws s3 sync mwaa s3://$bucket_name --profile $AWS_PROFILE
+```
 
 ## Tidy up
 At the end, you may want to remove all the resources created.
+
+Ensure that the S3 bucket is empties before attempting to delete it.
 
 Delete cloud formation template with pre-requisites:
 ```
