@@ -237,5 +237,9 @@ Outputs:
     Value: !Ref PrivateSubnet2
 
   BucketARN:
-    Description: 'The ARN of the bucket test'
+    Description: The ARN of the bucket
     Value: !GetAtt S3Bucket.Arn
+
+  BucketName:
+    Description: The name of the bucket
+    Value: !Ref S3Bucket
