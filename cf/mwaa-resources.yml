@@ -1,0 +1,131 @@
+Description:  This template deploys
+  - VPC security group to be used by MWAA
+
+Parameters:
+  VPCId:
+    Type: String
+    Description: The ID of the VPC
+  BucketArn:
+    Type: String
+    Description: The ARN of the S3 bucket
+  EnvName:
+    Type: String
+    Description: The name of the environment
+    Default: sample-mwaa
+  
+Resources:
+  # Security group
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "mwaa-security-group"
+      GroupDescription: "Security group with a self-referencing inbound rule."
+      VpcId: !Ref VPCId
+
+  SecurityGroupIngress1:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref SecurityGroup
+
+  SecurityGroupIngress2:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref SecurityGroup
+
+  SecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+
+  # IAM Role and policy
+  IAMExecutonRole: 
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "iam-mwaa-${EnvName}-MWAAExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - airflow-env.amazonaws.com
+                - airflow.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: "/service-role/"
+  ExecutionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Roles:
+        - !Ref IAMExecutonRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: airflow:PublishMetrics
+            Resource:
+              - !Sub "arn:aws:airflow:${AWS::Region}:${AWS::AccountId}:environment/${EnvName}"
+          - Effect: Deny
+            Action: s3:ListAllMyBuckets
+            Resource:
+              - !Sub "${BucketArn}"
+              - !Sub "${BucketArn}/*"
+          - Effect: Allow
+            Action:
+              - "s3:GetObject*"
+              - "s3:GetBucket*"
+              - "s3:List*"
+            Resource:
+              - !Sub "${BucketArn}"
+              - !Sub "${BucketArn}/*"
+          - Effect: Allow
+            Action:
+              - logs:DescribeLogGroups
+            Resource: "*"
+
+          - Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:CreateLogGroup
+              - logs:PutLogEvents
+              - logs:GetLogEvents
+              - logs:GetLogRecord
+              - logs:GetLogGroupFields
+              - logs:GetQueryResults
+              - logs:DescribeLogGroups
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:airflow-${EnvName}*"
+          - Effect: Allow
+            Action: cloudwatch:PutMetricData
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - sqs:ChangeMessageVisibility
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:ReceiveMessage
+              - sqs:SendMessage
+            Resource:
+              - !Sub "arn:aws:sqs:${AWS::Region}:*:airflow-celery-*"
+          - Effect: Allow
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+              - "kms:GenerateDataKey*"
+              - kms:Encrypt
+            NotResource: !Sub "arn:aws:kms:*:${AWS::AccountId}:key/*"
+            Condition:
+              StringLike:
+                "kms:ViaService":
+                  - !Sub "sqs.${AWS::Region}.amazonaws.com"

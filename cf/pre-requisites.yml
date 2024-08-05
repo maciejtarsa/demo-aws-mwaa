@@ -163,39 +163,6 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable2
       SubnetId: !Ref PrivateSubnet2
 
-  # Security group
-  SecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: "mwaa-security-group"
-      GroupDescription: "Security group with a self-referencing inbound rule."
-      VpcId: !Ref VPC
-
-  SecurityGroupIngress1:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref SecurityGroup
-      IpProtocol: tcp
-      FromPort: 5432
-      ToPort: 5432
-      SourceSecurityGroupId: !Ref SecurityGroup
-
-  SecurityGroupIngress2:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref SecurityGroup
-      IpProtocol: tcp
-      FromPort: 443
-      ToPort: 443
-      SourceSecurityGroupId: !Ref SecurityGroup
-
-  SecurityGroupEgress:
-    Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !Ref SecurityGroup
-      IpProtocol: -1
-      CidrIp: 0.0.0.0/0
-
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:

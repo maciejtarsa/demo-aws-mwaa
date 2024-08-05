@@ -41,11 +41,36 @@ Next, we need to upload files required by MWAA to the S3 bucket. These include:
 We can get the bucket name from the stack, and then run an s3 sync command to sync the contents of the `mwaa` folder into the bucket:
 ```
 bucket_name=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text)
+
 aws s3 sync mwaa s3://$bucket_name --profile $AWS_PROFILE
 ```
+### MWAA deployment
+Once the pre-requisites are in places, we can deploy MWAA and its resources.
 
+We will extract some variables from the previous stack and then pass them as variables to our MWAA stack:
+```
+vpc_id=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='VPC'].OutputValue" --output text)
+bucket_arn=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketARN'].OutputValue" --output text)
+
+aws cloudformation update-stack --stack-name mwaa-resources \
+--template-body file://cf/mwaa-resources.yml --profile $AWS_PROFILE \
+--parameters ParameterKey=VPCId,ParameterValue=$vpc_id\
+ ParameterKey=BucketArn,ParameterValue=$bucket_arn \
+--tags \
+ Key=Project,Value=Personal \
+ Key=Environment,Value=Dev \
+ Key=Creator,Value=$CREATOR \
+ Key=Owner,Value=$CREATOR \
+ Key=Version,Value=0.1.0 \
+--capabilities CAPABILITY_NAMED_IAM
+ ```
 ## Tidy up
 At the end, you may want to remove all the resources created.
+
+Delete cloud formation template for NWAA:
+```
+aws cloudformation delete-stack --stack-name mwaa-resources --profile $AWS_PROFILE
+```
 
 Ensure that the S3 bucket is empties before attempting to delete it.
 
