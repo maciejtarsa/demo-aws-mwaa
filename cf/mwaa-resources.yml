@@ -1,0 +1,425 @@
+Description:  This template deploys
+  - VPC security group to be used by MWAA
+  - IAM Execution role for MWAA
+  - MWAA environment
+  - Lambda function to create additional resources
+  - ALB security group
+  - ALB target group
+  - Application Load Balancer
+
+Parameters:
+  VPCId:
+    Type: String
+    Description: The ID of the VPC
+  PrivateSubnet1:
+    Type: String
+    Description: The ID of the private subnet 1
+  PrivateSubnet2:
+    Type: String
+    Description: The ID of the private subnet 2
+  PublicSubnet1:
+    Type: String
+    Description: The ID of the public subnet 1
+  PublicSubnet2:
+    Type: String
+    Description: The ID of the public subnet 2
+  BucketArn:
+    Type: String
+    Description: The ARN of the S3 bucket
+  BucketName:
+    Type: String
+    Description: The name of the S3 bucket
+  EnvName:
+    Type: String
+    Description: The name of the environment
+    Default: sample-mwaa
+  Creator:
+    Type: String
+    Description: The creator of the environment
+  EnvironmentClass:
+    Type: String
+    Description: The class of the environment which determines the size of workers, schedulers, etc.
+    AllowedValues:
+      - mw1.small
+      - mw1.medium
+      - mw1.large
+      - mw1.xlarge
+      - mw1.2xlarge
+    ConstraintDescription: Must be one of mw1.small, mw1.medium, mw1.large, mw1.2xlarge
+    Default: mw1.small
+  MaxWorkerCount:
+    Type: Number
+    Description: The max count of workers in env
+    Default: 1
+    MinValue: 1
+    MaxValue: 25
+    ConstraintDescription: Value must be an integer between 1 and 25
+  CertificateArn:
+    Type: String
+    Description: The ARN of the certificate to be used by the ALB
+  
+Resources:
+  # MWAA Security group
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "sgp-airflow-security-group"
+      GroupDescription: "Security group with a self-referencing inbound rule."
+      VpcId: !Ref VPCId
+
+  SecurityGroupIngress1:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref SecurityGroup
+
+  SecurityGroupIngress2:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref SecurityGroup
+
+  SecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+
+  # IAM Role and policy
+  IAMExecutonRole: 
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "iam-airflow-execution-role"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - airflow-env.amazonaws.com
+                - airflow.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: "/service-role/"
+  ExecutionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Roles:
+        - !Ref IAMExecutonRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: airflow:PublishMetrics
+            Resource:
+              - !Sub "arn:aws:airflow:${AWS::Region}:${AWS::AccountId}:environment/airflow-environment"
+          - Effect: Deny
+            Action: s3:ListAllMyBuckets
+            Resource:
+              - !Sub "${BucketArn}"
+              - !Sub "${BucketArn}/*"
+          - Effect: Allow
+            Action:
+              - "s3:GetObject*"
+              - "s3:GetBucket*"
+              - "s3:List*"
+            Resource:
+              - !Sub "${BucketArn}"
+              - !Sub "${BucketArn}/*"
+          - Effect: Allow
+            Action:
+              - logs:DescribeLogGroups
+            Resource: "*"
+
+          - Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:CreateLogGroup
+              - logs:PutLogEvents
+              - logs:GetLogEvents
+              - logs:GetLogRecord
+              - logs:GetLogGroupFields
+              - logs:GetQueryResults
+              - logs:DescribeLogGroups
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:airflow-airflow-environment*"
+          - Effect: Allow
+            Action: cloudwatch:PutMetricData
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - sqs:ChangeMessageVisibility
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:ReceiveMessage
+              - sqs:SendMessage
+            Resource:
+              - !Sub "arn:aws:sqs:${AWS::Region}:*:airflow-celery-*"
+          - Effect: Allow
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+              - "kms:GenerateDataKey*"
+              - kms:Encrypt
+            NotResource: !Sub "arn:aws:kms:*:${AWS::AccountId}:key/*"
+            Condition:
+              StringLike:
+                "kms:ViaService":
+                  - !Sub "sqs.${AWS::Region}.amazonaws.com"
+
+  # MWAA Environment
+  AirflowEnvironment:
+    Type: AWS::MWAA::Environment
+    Properties:
+      AirflowConfigurationOptions: 
+        core.default_timezone: utc
+        logging.logging_level: INFO
+        webserver.base_url: !GetAtt LoadBalancer.DNSName
+      AirflowVersion: 2.9.2
+      DagS3Path: dags
+      EndpointManagement: CUSTOMER
+      EnvironmentClass: !Ref EnvironmentClass
+      ExecutionRoleArn: !GetAtt IAMExecutonRole.Arn
+      LoggingConfiguration: 
+        DagProcessingLogs: 
+          Enabled: true
+          LogLevel: INFO
+        SchedulerLogs: 
+          Enabled: true
+          LogLevel: INFO
+        TaskLogs: 
+          Enabled: true
+          LogLevel: INFO
+        WebserverLogs: 
+          Enabled: true
+          LogLevel: INFO
+        WorkerLogs: 
+          Enabled: true
+          LogLevel: INFO
+      MaxWorkers: !Ref MaxWorkerCount
+      MinWorkers: 1
+      Name: airflow-environment
+      NetworkConfiguration: 
+        SecurityGroupIds: 
+          - !Ref SecurityGroup
+        SubnetIds: 
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      # PluginsS3Path: plugins/plugins.zip
+      RequirementsS3Path: requirements/requirements.txt
+      Schedulers: 2
+      SourceBucketArn: !Ref BucketArn
+      StartupScriptS3Path: startup/startup-script.sh
+      Tags: 
+        Project: Personal
+        Environment: Dev
+        Creator: !Ref Creator
+        Owner: !Ref Creator
+        Version: 0.1.0
+        Name: !Ref EnvName
+      WebserverAccessMode: PRIVATE_ONLY
+      WeeklyMaintenanceWindowStart: SUN:16:00 # this is in UTC - equivalent to midnight Perth time
+
+  # Lambda function to create additional resources
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: 'LambdaPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:TagLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/lambda-airflow-additional-resources:*"
+              - Effect: 'Allow'
+                Action:
+                  - logs:TagLogGroup
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:airflow-*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "${BucketArn}/lambda/*"
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcEndpoints
+                  - ec2:DescribeNetworkInterfaces
+                Resource: "*"
+              - Effect: 'Allow'
+                Action:
+                  - ec2:CreateVpcEndpoint
+                  - ec2:CreateTags
+                  - ec2:DeleteTags
+                  - ec2:ModifyVpcEndpoint
+                Resource: "arn:aws:ec2:*:*:vpc-endpoint/*"
+                Condition:
+                  ForAnyValue:StringEquals: {"aws:TagKeys": "MWAACustomerManaged"}
+              - Effect: Allow
+                Action:
+                  - ec2:DeleteVpcEndpoints
+                Resource: "arn:aws:ec2:*:*:vpc-endpoint/*"
+                Condition:
+                  ForAnyValue:StringEquals: {"aws:ResourceTag/MWAACustomerManaged": "true"}
+              - Effect: Allow
+                Action:
+                  - ec2:CreateVpcEndpoint
+                  - ec2:ModifyVpcEndpoint
+                Resource: [
+                  "arn:aws:ec2:*:*:vpc/*",
+                  "arn:aws:ec2:*:*:subnet/*",
+                  "arn:aws:ec2:*:*:security-group/*"
+                ]
+
+  AdditionalResourcesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: lambda-airflow-additional-resources
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: lambda/airflow-lambda.zip
+      Runtime: python3.11
+      Timeout: 120
+
+  AdditionalResources:
+    Type: Custom::AdditionalResources
+    Properties:
+      ServiceToken: !GetAtt AdditionalResourcesFunction.Arn
+      ServiceTimeout: 120
+      LogGroupArns:
+        - !GetAtt AirflowEnvironment.LoggingConfiguration.DagProcessingLogs.CloudWatchLogGroupArn
+        - !GetAtt AirflowEnvironment.LoggingConfiguration.SchedulerLogs.CloudWatchLogGroupArn
+        - !GetAtt AirflowEnvironment.LoggingConfiguration.TaskLogs.CloudWatchLogGroupArn
+        - !GetAtt AirflowEnvironment.LoggingConfiguration.WebserverLogs.CloudWatchLogGroupArn
+        - !GetAtt AirflowEnvironment.LoggingConfiguration.WorkerLogs.CloudWatchLogGroupArn
+      VpcId: !Ref VPCId
+      SecurityGroupId: !Ref SecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      VPCDatabaseEndpointService: !GetAtt AirflowEnvironment.DatabaseVpcEndpointService
+      VPCWebserverEndpointService: !GetAtt AirflowEnvironment.WebserverVpcEndpointService
+      Tags:
+        Project: Personal
+        Environment: Dev
+        Creator: !Ref Creator
+        Owner: !Ref Creator
+        Version: 0.1.0
+        Name: !Ref EnvName
+
+  # ALB Security Group
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "sgp-airflow-alb"
+      GroupDescription: "Security group for the Amazon MWAA ALB"
+      VpcId: !Ref VPCId
+
+  AlbSecurityGroupIngressPoer443:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      Description: "Ingress rule in port 443"
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      CidrIp: 0.0.0.0/0
+
+  AlbSecurityGroupIngressPort80:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      Description: "Ingress rule in port 80"
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+
+  AlbSecurityGroupIngressForSecurityGroup:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      Description: "Access from MWAA Security Group"
+      SourceSecurityGroupId: !Ref AlbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+
+  # ALB Target Group
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: "tg-airflow-target-group"
+      Port: 443
+      Protocol: HTTPS
+      VpcId: !Ref VPCId
+      HealthCheckProtocol: HTTPS
+      HealthCheckPort: traffic-port
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200,302
+      TargetType: ip
+      Targets:
+        - Id: !GetAtt AdditionalResources.ipAddress1
+          Port: 443
+        - Id: !GetAtt AdditionalResources.ipAddress2
+          Port: 443
+
+  # ALB
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: "alb-airflow"
+      Subnets: 
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !GetAtt AlbSecurityGroup.GroupId
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      DefaultActions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups: 
+              - TargetGroupArn: !GetAtt TargetGroup.TargetGroupArn
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+
+Outputs:
+  ExecutionRoleArn:
+    Description: The Arn of the Airflow Execution Role
+    Value: !GetAtt IAMExecutonRole.Arn
+  EnvironmentArn:
+    Description: The Anr of the MWAA environment
+    Value: !GetAtt AirflowEnvironment.Arn

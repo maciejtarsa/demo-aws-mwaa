@@ -1,1 +1,4 @@
---constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.2/constraints-3.11.txt"
+--find-links /usr/local/airflow/plugins
+--no-index
+
+astronomer-cosmos
