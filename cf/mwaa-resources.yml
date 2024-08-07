@@ -416,6 +416,150 @@ Resources:
       Certificates:
         - CertificateArn: !Ref CertificateArn
 
+  CloudWatchDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: "cfn-airflow-dashboard"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+              {
+                  "height": 6,
+                  "width": 18,
+                  "y": 0,
+                  "x": 0,
+                  "type": "metric",
+                  "properties": {
+                      "metrics": [
+                          [ "AmazonMWAA", "RunningTasks", "Function", "Executor", "Environment", "airflow-environment", { "stat": "Average" } ],
+                          [ ".", "QueuedTasks", ".", ".", ".", "." ]
+                      ],
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "region": "${AWS::Region}",
+                      "stat": "Sum",
+                      "period": 300,
+                      "title": "TaskExecution-Running,Queued"
+                  }
+              },
+              {
+                  "height": 6,
+                  "width": 6,
+                  "y": 0,
+                  "x": 18,
+                  "type": "metric",
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": true,
+                      "metrics": [
+                          [ "AWS/MWAA", "RunningTasks", "Environment", "airflow-environment", { "region": "${AWS::Region}" } ],
+                          [ ".", "QueuedTasks", ".", ".", { "region": "${AWS::Region}" } ]
+                      ],
+                      "region": "${AWS::Region}",
+                      "stat": "Maximum",
+                      "period": 300,
+                      "title": "Queue-QueuedTasks,RunningTasks"
+                  }
+              },
+              {
+                  "height": 6,
+                  "width": 6,
+                  "y": 6,
+                  "x": 6,
+                  "type": "metric",
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "AWS/MWAA", "CPUUtilization", "Cluster", "BaseWorker", "Environment", "airflow-environment", { "region": "${AWS::Region}" } ],
+                          [ "...", "AdditionalWorker", ".", ".", { "region": "${AWS::Region}" } ],
+                          [ "...", "Scheduler", ".", ".", { "region": "${AWS::Region}" } ],
+                          [ "...", "WebServer", ".", ".", { "region": "${AWS::Region}" } ]
+                      ],
+                      "region": "${AWS::Region}",
+                      "title": "CPUUtilisation",
+                      "period": 300
+                  }
+              },
+              {
+                  "height": 6,
+                  "width": 6,
+                  "y": 6,
+                  "x": 12,
+                  "type": "metric",
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "AWS/MWAA", "MemoryUtilization", "Cluster", "BaseWorker", "Environment", "airflow-environment" ],
+                          [ "...", "AdditionalWorker", ".", "." ],
+                          [ "...", "Scheduler", ".", "." ],
+                          [ "...", "WebServer", ".", "." ]
+                      ],
+                      "region": "${AWS::Region}",
+                      "title": "MemoryUtilisation"
+                  }
+              },
+              {
+                  "height": 6,
+                  "width": 6,
+                  "y": 6,
+                  "x": 0,
+                  "type": "metric",
+                  "properties": {
+                      "metrics": [
+                          [ "AWS/MWAA", "CPUUtilization", "Cluster", "BaseWorker", "Environment", "airflow-environment", { "region": "${AWS::Region}" } ],
+                          [ "...", "AdditionalWorker", ".", ".", { "region": "${AWS::Region}" } ]
+                      ],
+                      "view": "timeSeries",
+                      "stacked": true,
+                      "region": "${AWS::Region}",
+                      "stat": "SampleCount",
+                      "period": 60,
+                      "title": "WorkerCount",
+                      "setPeriodToTimeRange": true
+                  }
+              },
+              {
+                  "height": 6,
+                  "width": 6,
+                  "y": 6,
+                  "x": 18,
+                  "type": "metric",
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "AmazonMWAA", "TasksKilledExternally", "Function", "Scheduler", "Environment", "airflow-environment" ]
+                      ],
+                      "region": "${AWS::Region}",
+                      "title": "FailedTaskWithNoLogs"
+                  }
+              },
+              {
+                  "height": 5,
+                  "width": 24,
+                  "y": 12,
+                  "x": 0,
+                  "type": "metric",
+                  "properties": {
+                      "metrics": [
+                          [ "AWS/Logs", "IncomingLogEvents", "LogGroupName", "airflow-airflow-environment-DAGProcessing", { "region": "${AWS::Region}" } ],
+                          [ "...", "airflow-airflow-environment-Scheduler", { "region": "${AWS::Region}" } ],
+                          [ "...", "airflow-airflow-environment-Task", { "region": "${AWS::Region}" } ],
+                          [ "...", "airflow-airflow-environment-WebServer", { "region": "${AWS::Region}" } ],
+                          [ "...", "airflow-airflow-environment-Worker", { "region": "${AWS::Region}" } ]
+                      ],
+                      "region": "${AWS::Region}",
+                      "stat": "Sum",
+                      "period": 300,
+                      "view": "timeSeries",
+                      "stacked": false
+                  }
+              }
+          ]
+        }
+
 Outputs:
   ExecutionRoleArn:
     Description: The Arn of the Airflow Execution Role
@@ -423,3 +567,6 @@ Outputs:
   EnvironmentArn:
     Description: The Anr of the MWAA environment
     Value: !GetAtt AirflowEnvironment.Arn
+  CloudWatchDashboardName:
+    Description: The name of the Cloud Watch dashboard
+    Value: !Ref CloudWatchDashboard

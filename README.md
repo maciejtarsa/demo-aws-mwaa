@@ -6,7 +6,7 @@ This MWAA setup uses the following:
 - private web server access mode
 
 ## Set up and requirements
-You will require an AWS account. Cloud formation gets deployed via AWS CLI. An AWS login session is required. An AWS profile can be configured by running:
+You will require an AWS account. Cloud formation gets deployed via AWS CLI. AWS login session is required. AWS profile can be configured by running:
 ```
 aws configure
 ```
@@ -14,14 +14,14 @@ Fill the details as required. Once a profile is configured, a session can be cre
 ```
 aws sso login --profile <PROFILE-NAME>
 ```
-Once you are logged in, we can export the variables that will be needed for the deployment as follows:
+Once you are logged in, you can export the variables that will be needed for the deployment as follows:
 ```
 export AWS_PROFILE=<PROFILE-NAME>
 export CREATOR=<YOUR-NAME>
 ```
 
 ## Cloud formation deployment
-The cloud formation template is split into pre-requisites and MWAA resources. Pre-requisites include resources that are needed before MWAA can be dployed (VPC resources, S3 bucket). Once these are deployed, some files are required to be present in the S3 bucket (we run `s3 sync` for those). Then, the MWAA resources get deployed.
+The cloud formation template is split into pre-requisites and MWAA resources. Pre-requisites include resources that are needed before MWAA can be dployed (VPC resources, S3 bucket). Once these are deployed, some files are required to be present in the S3 bucket (we run `s3 sync` for those). Because we're using private web access mode, we'll also need a TCL certificate. Once all of these are in place, the MWAA resources get deployed.
 
 ### Pre-requisites deployment
 MWAA requires some resources to exist in your account already - VPC resources with private and public subnets and an S3 bucket
@@ -38,15 +38,15 @@ aws cloudformation create-stack --stack-name mwaa-pre-requisites \
 ```
 ### Sync to S3 bucket
 Next, we need to upload files required by MWAA to the S3 bucket. These include:
-- folder with our dags - in this case we have a simple dag with a Dummy Operator
+- folder with dags - in this case a simple dag with a Dummy Operator
 - startup script which will be used to set up MWAA workers
 - requirements.txt file which will contain packages used by our environment
 - lambda function code which will be run after MWAA gets created
 
 #### Building a wheel for requirements
 
-> When you create an environment with private web server access, you must package all of your dependencies in a Python wheel archive (.whl), then reference the .whl in your requirements.txt. For instructions on packaging and installing your dependencies using wheel
-[From Apache Airflow access modes](https://docs.aws.amazon.com/mwaa/latest/userguide/configuring-networking.html)
+> When you create an environment with private web server access, you must package all of your dependencies in a Python wheel archive (.whl), then reference the .whl in your requirements.txt. For instructions on packaging and installing your dependencies using wheel visit 
+[Apache Airflow access modes](https://docs.aws.amazon.com/mwaa/latest/userguide/configuring-networking.html).
 You can build a wheel of all requirements and package them into a zip with:
 ```bash
 cd mwaa
@@ -59,7 +59,7 @@ rm -r wheels
 cd ..
 ```
 #### Zipping lambda code
-Equally our Lambda function code will need to be zipped before updating to S3
+Equally the Lambda function code will need to be zipped before updating to S3
 ```
 cd mwaa/lambda
 mkdir code
@@ -72,8 +72,8 @@ rm -r code
 cd ../..
 ```
 #### Upload files to s3
-Once done, we need to sync the file to S3.
-We can get the bucket name from the stack, and then run an s3 sync command to sync the contents of the `mwaa` folder into the bucket:
+Once done, the files can be synced to S3.
+You can get the bucket name from the stack, and then run an s3 sync command to sync the contents of the `mwaa` folder into the bucket:
 ```
 bucket_name=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text)
 
@@ -82,7 +82,7 @@ aws s3 sync mwaa s3://$bucket_name --profile $AWS_PROFILE
 
 ### Certificate
 
-As we will be deploying MWAA in PRIVATE web server access mode, we'll be using a load balancer to provide web server access. One of the requirements is to use a server certificate so that clients can establish a Transport Layer Security (TLS). An ACM certificate is preferred, but it does require a new or existing domain name. If you have domain in Route53 set up, and existing certificates, use those. Alternatively, you can create a self-signed certificate and import it into IAM. Note that this is a good solution for testing the setup - not for production. More info can be found [in this document on page 12](https://d1.awsstatic.com/whitepapers/accessing-a-private-amazon-mwaa-environment-using-federated-identities.pdf)
+As the MWAA deployment will use private web server access mode, you'll need a load balancer to provide web server access. One of the requirements is to use a server certificate so that clients can establish a Transport Layer Security (TLS). An ACM certificate is preferred, but it does require a new or existing domain name. If you have a domain in Route53 set up, and an existing certificate, use those. Alternatively, you can create a self-signed certificate and import it into IAM. Note that this is a useful solution for testing the setup - not for production. More info can be found [in this document on page 12](https://d1.awsstatic.com/whitepapers/accessing-a-private-amazon-mwaa-environment-using-federated-identities.pdf)
 
 To create a self-signed certificate, run:
 ```
@@ -102,14 +102,14 @@ aws iam upload-server-certificate --server-certificate-name AirflowCertificate \
  --profile $AWS_PROFILE \
  --tags '[{"Key": "Project", "Value": "Personal"}, {"Key":"Environment", "Value":"Dev"}, {"Key": "Version", "Value": "0.1.0"}]'
 ```
-Note down the ARN of your certificate and export it to env variable:
+Note down the ARN of your certificate and export it as an env variable:
 ```
 export CERT_ARN=<CERT_ARN>
 ```
 ### MWAA deployment
-Once the pre-requisites are in place, we can deploy MWAA and its resources.
+Once the pre-requisites are in place, an MWAA can be dployed.
 
-We will extract some variables from the previous stack and then pass them as variables to our MWAA stack:
+Some variables from the previous stack can be extracted and then passed to the MWAA stack:
 ```
 vpc_id=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='VPC'].OutputValue" --output text)
 bucket_arn=$(aws cloudformation describe-stacks --stack-name mwaa-pre-requisites --profile $AWS_PROFILE --query "Stacks[0].Outputs[?OutputKey=='BucketARN'].OutputValue" --output text)
@@ -141,17 +141,16 @@ aws cloudformation create-stack --stack-name mwaa-resources \
 ## Tidy up
 At the end, you may want to remove all the resources created.
 
-Delete cloud formation template for NWAA:
+Delete cloud formation template for MWAA:
 ```
 aws cloudformation delete-stack --stack-name mwaa-resources --profile $AWS_PROFILE
 ```
-
-Ensure that the S3 bucket is empties before attempting to delete it.
-
 Delete the ACM certificate that was created:
 ```
 aws iam delete-server-certificate --server-certificate-name AirflowCertificate --profile $AWS_PROFILE
 ```
+
+Ensure that the S3 bucket is emptied before attempting to delete it. Unfortunately this cannot be done with CLI at the moment and has to be done in AWS Web Console.
 
 Delete cloud formation template with pre-requisites:
 ```
