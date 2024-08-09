@@ -6,6 +6,7 @@ Description:  This template deploys
   - ALB security group
   - ALB target group
   - Application Load Balancer
+  - Cloud Watch Dashboard
 
 Parameters:
   VPCId:
@@ -213,7 +214,7 @@ Resources:
         SubnetIds: 
           - !Ref PrivateSubnet1
           - !Ref PrivateSubnet2
-      # PluginsS3Path: plugins/plugins.zip
+      PluginsS3Path: plugins/plugins.zip
       RequirementsS3Path: requirements/requirements.txt
       Schedulers: 2
       SourceBucketArn: !Ref BucketArn
