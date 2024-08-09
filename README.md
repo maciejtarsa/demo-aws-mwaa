@@ -1,5 +1,5 @@
-# Deploying MWAA with Cloud Formation
-A sample Cloud Formation project that deploys MWAA into a given AWS account.
+# Deploying MWAA with Cloud Formation in Private Network aceess mode
+A Cloud Formation project that deploys MWAA into a given AWS account.
 
 This MWAA setup uses the following:
 - customer managed VPC endpoints
